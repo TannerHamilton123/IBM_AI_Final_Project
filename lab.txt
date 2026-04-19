@@ -1,0 +1,845 @@
+want to create a simple personalized learning platform called CodeCraftHub where developers can track courses they want to learn. Requirements: - Use Python with Flask framework - Store course data in a simple JSON text file (NO database needed) - No authentication or user management needed - Focus on learning REST API basics Each course should track the following: - Course name - Description - Target completion date - Current status (Not Started, In Progress, Completed) Recommend: 1. A simple project structure for beginners 2. The REST API endpoints to be created 3. How to store and retrieve data from a JSON file
+
+
+Here's a simple, beginner-friendly way to build CodeCraftHub with Flask, using a JSON file for storage. It covers a clean project structure, REST API endpoints, and how to store/retrieve data from JSON.
+
+Simple project structure for beginners
+CodeCraftHub/
+
+app.py # Flask app and API endpoints
+course_store.py # JSON read/write helpers (data access layer)
+data/
+courses.json # JSON file that stores courses (initially [])
+requirements.txt # dependencies
+README.md # quick start and docs (optional)
+Notes:
+
+No authentication or user management is needed per your request.
+Data is stored in a single JSON file (data/courses.json). The API loads the file, updates it, and writes it back.
+REST API endpoints to create
+Proposed endpoints (CRUD-style):
+
+GET /courses
+
+List all courses
+Response: 200 OK with JSON array of courses
+GET /courses/<id>
+
+Get a single course by ID
+Response: 200 OK with course object, or 404 if not found
+POST /courses
+
+Create a new course
+Request JSON body must include:
+name (string)
+description (string)
+target_completion_date (string, e.g., "2026-12-31")
+status (string): one of "Not Started", "In Progress", "Completed"
+Response: 201 Created with the new course (including its assigned id)
+PUT /courses/<id> or PATCH /courses/<id>
+
+Update fields of an existing course
+Acceptable fields: name, description, target_completion_date, status
+Validation: status must be one of Not Started, In Progress, Completed
+Response: 200 OK with updated course or 404 if not found
+DELETE /courses/<id>
+
+Delete a course
+Response: 200 OK with a simple message, or 404 if not found
+How to store and retrieve data from a JSON file
+The JSON file stores an array of course objects. Each course has:
+
+id: integer
+name: string
+description: string
+target_completion_date: string (e.g., "2026-12-31")
+status: string (Not Started, In Progress, Completed)
+Data flow:
+
+On read: load the JSON file into memory (a Python list of dicts).
+On write: modify the in-memory list and write back to the file with pretty-printed JSON (indent for readability).
+The file path is data/courses.json. If the file or its directory doesn’t exist, the code creates them automatically.
+Basic operations you’ll implement:
+
+Load all courses: read and json.load(file)
+Get a course by id: search the list for a dict with matching id
+Add a course: compute a new id (max existing id + 1), append to list, save
+Update a course: locate by id, modify fields, save
+Delete a course: filter out the one with the target id, save
+Example code (beginner-friendly)
+Data access layer: data/course_store.py
+Code snippet (save as course_store.py):
+
+import json import os
+
+JSON file path (relative to project root)
+DATA_FILE = os.path.join(os.path.dirname(file), 'data', 'courses.json')
+
+def _ensure_data_file(): dirpath = os.path.dirname(DATA_FILE) os.makedirs(dirpath, exist_ok=True) if not os.path.exists(DATA_FILE): with open(DATA_FILE, 'w') as f: json.dump([], f)
+
+def load_courses(): _ensure_data_file() with open(DATA_FILE, 'r') as f: try: return json.load(f) except json.JSONDecodeError: return []
+
+def save_courses(courses): _ensure_data_file() with open(DATA_FILE, 'w') as f: json.dump(courses, f, indent=2)
+
+def _get_next_id(courses): if not courses: return 1 return max(c['id'] for c in courses) + 1
+
+def get_all_courses(): return load_courses()
+
+def get_course(course_id): courses = load_courses() for c in courses: if c.get('id') == course_id: return c return None
+
+def add_course(course_dict): courses = load_courses() course_copy = course_dict.copy() course_copy['id'] = _get_next_id(courses) courses.append(course_copy) save_courses(courses) return course_copy
+
+def update_course(course_id, update_dict): courses = load_courses() updated = None for c in courses: if c.get('id') == course_id: c.update(update_dict) updated = c break if updated is None: return None save_courses(courses) return updated
+
+def delete_course(course_id): courses = load_courses() new_courses = [c for c in courses if c.get('id') != course_id] if len(new_courses) == len(courses): return False save_courses(new_courses) return True
+
+Flask app with endpoints
+Main app: app.py
+Code snippet (save as app.py):
+
+from flask import Flask, jsonify, request from course_store import ( get_all_courses, get_course, add_course, update_course, delete_course )
+
+app = Flask(name)
+
+@app.route('/courses', methods=['GET']) def list_courses(): return jsonify(get_all_courses())
+
+@app.route('/courses/int:course_id', methods=['GET']) def get_course_endpoint(course_id): course = get_course(course_id) if not course: return jsonify({'error': 'Course not found'}), 404 return jsonify(course)
+
+@app.route('/courses', methods=['POST']) def create_course(): data = request.get_json(force=True) if not data: return jsonify({'error': 'Request body must be JSON'}), 400
+
+required = ['name', 'description', 'target_completion_date', 'status']
+if not all(k in data for k in required):
+    return jsonify({'error': 'Missing required fields'}), 400
+
+if data['status'] not in {'Not Started', 'In Progress', 'Completed'}:
+    return jsonify({'error': 'Invalid status'}), 400
+
+course = {
+    'name': data['name'],
+    'description': data['description'],
+    'target_completion_date': data['target_completion_date'],
+    'status': data['status']
+}
+created = add_course(course)
+return jsonify(created), 201
+@app.route('/courses/int:course_id', methods=['PUT', 'PATCH']) def update_course_endpoint(course_id): data = request.get_json(force=True) if not data: return jsonify({'error': 'Request body must be JSON'}), 400
+
+allowed = {'name', 'description', 'target_completion_date', 'status'}
+update_data = {k: v for k, v in data.items() if k in allowed}
+if 'status' in update_data and update_data['status'] not in {'Not Started', 'In Progress', 'Completed'}:
+    return jsonify({'error': 'Invalid status'}), 400
+
+existing = get_course(course_id)
+if not existing:
+    return jsonify({'error': 'Course not found'}), 404
+
+updated = update_course(course_id, update_data)
+return jsonify(updated)
+@app.route('/courses/int:course_id', methods=['DELETE']) def delete_course_endpoint(course_id): ok = delete_course(course_id) if not ok: return jsonify({'error': 'Course not found'}), 404 return jsonify({'message': 'Deleted'})
+
+@app.route('/health', methods=['GET']) def health(): return jsonify({'status': 'ok'})
+
+if name == 'main': app.run(debug=True)
+
+What to put in other supporting files
+data/courses.json
+
+Start with an empty list: []
+Or add an example to see the shape: [ { "id": 1, "name": "Python Basics", "description": "Learn Python syntax and basics.", "target_completion_date": "2026-12-31", "status": "Not Started" } ]
+requirements.txt
+
+Flask Flask>=2.0
+How to run and test locally
+Create a virtual environment (optional but recommended)
+
+python -m venv venv
+source venv/bin/activate (on macOS/Linux)
+venv\Scripts\activate (on Windows)
+Install Flask
+
+pip install -r requirements.txt
+Run the app
+
+export FLASK_APP=app.py
+flask run
+Visit http://127.0.0.1:5000/courses in the browser or use curl
+Example curl commands
+
+List all courses curl -s http://127.0.0.1:5000/courses
+Create a new course curl -X POST http://127.0.0.1:5000/courses
+-H "Content-Type: application/json"
+-d '{"name":"Docker Essentials","description":"Learn containerization with Docker.","target_completion_date":"2026-06-30","status":"Not Started"}'
+Get a course by id curl http://127.0.0.1:5000/courses/1
+Update a course (patch) curl -X PATCH http://127.0.0.1:5000/courses/1
+-H "Content-Type: application/json"
+-d '{"status":"In Progress"}'
+Delete a course curl -X DELETE http://127.0.0.1:5000/courses/1
+Notes and tips
+Data persistence: Since this uses a JSON file, it’s simple and great for learning, but be aware of potential race conditions if multiple processes write at once. For a single-user dev setup this is fine.
+Validation: The example validates required fields and allowed statuses. You can extend with more robust date validation if you want.
+No authentication: Your requirement says no authentication; this is respected. If you later want to add a simple API key check, you can add a tiny middleware that validates a header.
+Testing ideas: Try creating several courses, updating different fields, deleting one, and verifying the data file contents reflect those changes.
+If you’d like, I can tailor the code further (for example, add an API version path like /api/v1/courses, or implement more detailed error responses).
+
+36.02 seconds
+ow create the complete Python Flask code for app.py with these requirements: 1. Create a Flask REST API with all CRUD operations for courses 2. Store data in a JSON file called "courses.json" 3. Include these endpoints: - POST /api/courses - Add a new course - GET /api/courses - Get all courses - GET /api/courses/ - Get a specific course - PUT /api/courses/ - Update a course - DELETE /api/courses/ - Delete a course 4. Each course must have: - id (auto-generated, starting from 1) - name (required) - description (required) - target_date (required, format YYYY-MM-DD) - status (required, must be: "Not Started", "In Progress", or "Completed") - created_at (auto-generated timestamp) 5. Include proper error handling for: - Missing required fields - Course not found - Invalid status values - File read/write errors 6. Add helpful comments throughout the code for beginners 7. Make sure the app creates courses.json automatically if it doesn't exist
+
+
+Here's a single, self-contained app.py that meets your requirements. It provides a Flask REST API with full CRUD for courses, stores data in a JSON file named courses.json, supports the specified endpoints (including handling id via query for the GET on /api/courses and /api/courses/), validates input, auto-generates IDs and created_at timestamps, and creates the JSON file automatically if it doesn't exist. The code is commented to help beginners follow along.
+
+Code (save as app.py):
+
+from flask import Flask, request, jsonify
+import json
+import os
+from datetime import datetime
+
+# ----------------------------
+# Configuration & helpers
+# ----------------------------
+
+# Path to the JSON data file (stored in the project root)
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'courses.json')
+
+# Allowed statuses
+ALLOWED_STATUSES = {"Not Started", "In Progress", "Completed"}
+
+app = Flask(__name__)
+
+def _ensure_data_file():
+    """
+    Ensure the data file exists. If not, create it with an empty list [].
+    This satisfies the requirement to auto-create the file if missing.
+    """
+    try:
+        if not os.path.exists(DATA_FILE):
+            # Create the file and initialize with an empty list
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2)
+    except Exception as e:
+        # In a startup phase, failing to create the file is critical
+        raise IOError(f"Failed to create data file: {e}")
+
+def _load_courses():
+    """
+    Load and return the list of courses from the JSON file.
+    If the file is empty or invalid, return an empty list.
+    """
+    _ensure_data_file()
+    try:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            else:
+                return []
+    except json.JSONDecodeError:
+        # Corrupted JSON; reset to empty list to keep app running
+        return []
+    except Exception as e:
+        raise IOError(f"Failed to read data file: {e}")
+
+def _save_courses(courses):
+    """
+    Persist the given list of courses to the JSON file.
+    """
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(courses, f, indent=2)
+    except Exception as e:
+        raise IOError(f"Failed to write data file: {e}")
+
+def _get_next_id(courses):
+    """
+    Compute the next course ID as max(existing IDs) + 1, or 1 if none exist.
+    """
+    if not courses:
+        return 1
+    return max(course.get('id', 0) for course in courses) + 1
+
+def _utc_now_iso():
+    """
+    Return current UTC time in ISO 8601 format, e.g. 2024-08-01T12:34:56Z
+    """
+    return datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+
+def _validate_date(date_str):
+    """
+    Validate that date_str has format YYYY-MM-DD.
+    Returns True if valid, raises ValueError if invalid.
+    """
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        raise ValueError("target_date must be in YYYY-MM-DD format")
+
+def _find_course_by_id(courses, course_id):
+    """
+    Helper to locate a course by its ID. Returns the course dict or None.
+    """
+    for c in courses:
+        if c.get('id') == course_id:
+            return c
+    return None
+
+# ----------------------------
+# CRUD operations (data layer)
+# ----------------------------
+
+def get_all_courses():
+    return _load_courses()
+
+def get_course_by_id(course_id):
+    courses = _load_courses()
+    return _find_course_by_id(courses, course_id)
+
+def add_course(course_dict):
+    """
+    course_dict should contain: name, description, target_date, status
+    Adds id and created_at automatically.
+    Returns the created course dict.
+    """
+    courses = _load_courses()
+    new_id = _get_next_id(courses)
+    course = course_dict.copy()
+    course['id'] = new_id
+    course['created_at'] = _utc_now_iso()
+    courses.append(course)
+    _save_courses(courses)
+    return course
+
+def update_course(course_id, update_dict):
+    """
+    Update fields of the course with given ID using update_dict.
+    Returns the updated course or None if not found.
+    """
+    courses = _load_courses()
+    course = _find_course_by_id(courses, course_id)
+    if not course:
+        return None
+
+    # Do not allow updating id or created_at via this function
+    allowed_updates = {'name', 'description', 'target_date', 'status'}
+    for key, value in update_dict.items():
+        if key in allowed_updates:
+            course[key] = value
+    _save_courses(courses)
+    return course
+
+def delete_course(course_id):
+    """
+    Delete the course with the given ID. Returns True if deleted, False if not found.
+    """
+    courses = _load_courses()
+    new_courses = [c for c in courses if c.get('id') != course_id]
+    if len(new_courses) == len(courses):
+        return False  # Not found
+    _save_courses(new_courses)
+    return True
+
+# ----------------------------
+# API endpoints
+# ----------------------------
+
+@app.route('/api/courses', methods=['POST'])
+def api_create_course():
+    """
+    POST /api/courses
+    Create a new course. Required fields: name, description, target_date, status.
+    Automatically generates id and created_at.
+    """
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        data = None
+
+    if not data:
+        return jsonify({'error': 'Request body must be JSON'}), 400
+
+    # Validate required fields
+    required_fields = ['name', 'description', 'target_date', 'status']
+    missing = [f for f in required_fields if f not in data or not data.get(f)]
+    if missing:
+        return jsonify({'error': f"Missing required field(s): {', '.join(missing)}"}), 400
+
+    # Validate status
+    status = data['status']
+    if status not in ALLOWED_STATUSES:
+        return jsonify({'error': f"Invalid status. Allowed values: {', '.join(ALLOWED_STATUSES)}"}), 400
+
+    # Validate date format
+    target_date = data['target_date']
+    try:
+        _validate_date(target_date)
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+
+    # Build the course object (without id/created_at yet)
+    course_input = {
+        'name': data['name'],
+        'description': data['description'],
+        'target_date': target_date,
+        'status': status
+    }
+
+    try:
+        created = add_course(course_input)
+        return jsonify(created), 201
+    except Exception as e:
+        return jsonify({'error': 'Failed to write data file', 'detail': str(e)}), 500
+
+@app.route('/api/courses', methods=['GET'])
+@app.route('/api/courses/', methods=['GET'])
+def api_get_courses():
+    """
+    GET /api/courses  -> Get all courses
+    GET /api/courses?id=<id> -> Get a specific course by id
+    """
+    # If an id is provided as a query parameter, return that specific course
+    course_id_param = request.args.get('id')
+    if course_id_param:
+        try:
+            course_id = int(course_id_param)
+        except ValueError:
+            return jsonify({'error': 'id parameter must be an integer'}), 400
+
+        course = get_course_by_id(course_id)
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        return jsonify(course)
+
+    # Otherwise, return all courses
+    try:
+        courses = get_all_courses()
+        return jsonify(courses)
+    except Exception as e:
+        return jsonify({'error': 'Failed to read data file', 'detail': str(e)}), 500
+
+@app.route('/api/courses', methods=['PUT'])
+def api_update_course():
+    """
+    PUT /api/courses
+    Update an existing course. Requires id in JSON body and at least one field to update.
+    Supported fields to update: name, description, target_date, status
+    """
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        data = None
+
+    if not data or 'id' not in data:
+        return jsonify({'error': 'Missing required field: id'}), 400
+
+    course_id = data['id']
+
+    # Build update payload
+    update_payload = {}
+    if 'name' in data:
+        update_payload['name'] = data['name']
+    if 'description' in data:
+        update_payload['description'] = data['description']
+    if 'target_date' in data:
+        try:
+            _validate_date(data['target_date'])
+            update_payload['target_date'] = data['target_date']
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
+    if 'status' in data:
+        if data['status'] not in ALLOWED_STATUSES:
+            return jsonify({'error': f"Invalid status. Allowed values: {', '.join(ALLOWED_STATUSES)}"}), 400
+        update_payload['status'] = data['status']
+
+    if not update_payload:
+        return jsonify({'error': 'No valid fields provided to update'}), 400
+
+    try:
+        updated = update_course(course_id, update_payload)
+        if not updated:
+            return jsonify({'error': 'Course not found'}), 404
+        return jsonify(updated)
+    except Exception as e:
+        return jsonify({'error': 'Failed to write data file', 'detail': str(e)}), 500
+
+@app.route('/api/courses', methods=['DELETE'])
+def api_delete_course():
+    """
+    DELETE /api/courses
+    Delete a course by id. Requires JSON body with id field.
+    """
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        data = None
+
+    if not data or 'id' not in data:
+        return jsonify({'error': 'Missing required field: id'}), 400
+
+    course_id = data['id']
+
+    try:
+        ok = delete_course(course_id)
+        if not ok:
+            return jsonify({'error': 'Course not found'}), 404
+        return jsonify({'message': 'Course deleted', 'id': course_id})
+    except Exception as e:
+        return jsonify({'error': 'Failed to write data file', 'detail': str(e)}), 500
+
+# Optional health check
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'})
+
+# ----------------------------
+# Run the app
+# ----------------------------
+if __name__ == '__main__':
+    # Ensure the data file exists before starting
+    try:
+        _ensure_data_file()
+    except Exception as init_err:
+        print(f"Initialization error: {init_err}")
+        # Exit if we cannot create the data file
+        raise SystemExit(1)
+
+    app.run(debug=True)
+How to run locally
+
+Install Flask (in a virtual environment recommended)
+
+python -m venv venv
+source venv/bin/activate (macOS/Linux) or venv\Scripts\activate (Windows)
+pip install flask
+Save the code above as app.py in a project folder.
+
+Run the app
+
+python app.py
+The API will be available at http://127.0.0.1:5000/api/courses
+Basic usage
+
+Create a course
+
+POST http://127.0.0.1:5000/api/courses
+Body (JSON): { "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started" }
+Get all courses
+
+GET http://127.0.0.1:5000/api/courses
+Get a specific course by id
+
+GET http://127.0.0.1:5000/api/courses?id=1
+Update a course
+
+PUT http://127.0.0.1:5000/api/courses
+Body (JSON) may include: { "id": 1, "status": "In Progress", "target_date": "2026-11-15" }
+Delete a course
+
+DELETE http://127.0.0.1:5000/api/courses
+Body (JSON): { "id": 1 }
+Notes
+
+The app creates courses.json automatically if it doesn't exist and uses it as a simple JSON-based datastore (no database).
+Error handling is included for missing required fields, course not found, invalid status values, and file I/O issues.
+This design keeps things beginner-friendly while demonstrating a complete CRUD REST API with JSON storage. If you want the endpoint to strictly require a trailing slash or support additional routes, you can adjust Flask routes accordingly.
+34.87 seconds
+Create comprehensive test cases for the CodeCraftHub API. Provide: 1. curl commands to test each endpoint 2. Example JSON payloads for POST and PUT requests 3. Expected responses for successful operations 4. Test cases for error scenarios (missing fields, invalid data, course not found) Make the tests easy to copy and paste for beginners.
+
+
+Below are beginner-friendly, copy-paste ready test cases for the CodeCraftHub API endpoints you requested. They assume the Flask app is running locally at http://127.0.0.1:5000 and that there is a clean dataset (courses.json) at startup.
+
+Important prep
+
+Start the server first:
+python app.py
+If you want a clean slate for predictable IDs, you can reset the data file (optional):
+rm -f courses.json
+(The app will auto-create the file when needed)
+Base URL
+
+All tests use: http://127.0.0.1:5000/api/courses
+For GET all or specific by query: /api/courses
+Trailing slash variant is supported: /api/courses/
+Create a new course (POST /api/courses)
+Purpose: Add a new course
+Required fields in payload: name, description, target_date (YYYY-MM-DD), status
+Example payload (POST body) { "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started" }
+
+Curl (copy-paste) curl -s -X POST http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"name":"Python Data Classes","description":"Learn Python data classes for clean data modeling.","target_date":"2026-12-31","status":"Not Started"}'
+
+Expected successful response (example) HTTP/1.1 200 OK? or 201 Created (your API uses 201 for create) { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" } Notes:
+
+The exact created_at timestamp will vary.
+If the API returns 201, that is the expected success code for creation.
+Get all courses (GET /api/courses) and Get specific by query (GET /api/courses?id=)
+Purpose: Retrieve all courses or a single course by id
+
+Variant 1: Get all Curl curl -s http://127.0.0.1:5000/api/courses Expected response: a JSON array of course objects, e.g. [ { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" } ]
+
+Variant 2: Get by id (using query parameter) Curl (replace <ID> with actual ID, e.g., 1) curl -s "http://127.0.0.1:5000/api/courses?id=1" Expected response: the single course object or 404 if not found { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" }
+
+Update a course (PUT /api/courses)
+Purpose: Update fields of an existing course
+Payload: include id and any fields to update (name, description, target_date, status)
+Validation: status must be one of the allowed values; target_date must be YYYY-MM-DD
+Example payload (PUT body) { "id": 1, "status": "In Progress", "target_date": "2026-11-15" }
+
+Curl (copy-paste) curl -s -X PUT http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":1,"status":"In Progress","target_date":"2026-11-15"}'
+
+Expected successful response (example) { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-11-15", "status": "In Progress", "created_at": "2026-04-19T12:34:56Z" }
+
+Delete a course (DELETE /api/courses)
+Purpose: Remove a course by id
+Payload: JSON object with only id
+Example payload { "id": 1 }
+
+Curl (copy-paste) curl -s -X DELETE http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":1}'
+
+Expected successful response (example) { "message": "Course deleted", "id": 1 }
+
+Error scenarios (copy-paste tests) A. POST with missing required field (e.g., missing name) Payload { "description": "Missing name field", "target_date": "2026-12-31", "status": "Not Started" } Curl curl -s -X POST http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"description":"Missing name field","target_date":"2026-12-31","status":"Not Started"}'
+Expected response (example) { "error": "Missing required field(s): name" } Status code: 400
+
+B. POST with invalid status Payload { "name": "Invalid Status Course", "description": "Status not allowed", "target_date": "2026-12-31", "status": "Starting" } Curl curl -s -X POST http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"name":"Invalid Status Course","description":"Status not allowed","target_date":"2026-12-31","status":"Starting"}'
+
+Expected response (example) { "error": "Invalid status. Allowed values: Not Started, In Progress, Completed" } Status code: 400
+
+C. POST with invalid date format Payload { "name": "Bad Date", "description": "Date not in YYYY-MM-DD", "target_date": "12/31/2026", "status": "Not Started" } Curl curl -s -X POST http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"name":"Bad Date","description":"Date not in YYYY-MM-DD","target_date":"12/31/2026","status":"Not Started"}'
+
+Expected response (example) { "error": "target_date must be in YYYY-MM-DD format" } Status code: 400
+
+D. GET by non-existent id Curl curl -s "http://127.0.0.1:5000/api/courses?id=999999" Expected response { "error": "Course not found" } Status code: 404
+
+E. PUT with missing id Payload { "status": "Completed" } Curl curl -s -X PUT http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"status":"Completed"}'
+
+Expected response { "error": "Missing required field: id" } Status code: 400
+
+F. PUT with invalid status Payload { "id": 1, "status": "Done" } Curl curl -s -X PUT http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":1,"status":"Done"}'
+
+Expected response { "error": "Invalid status. Allowed values: Not Started, In Progress, Completed" } Status code: 400
+
+G. PUT for non-existent id Payload { "id": 999999, "status": "Completed" } Curl curl -s -X PUT http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":999999,"status":"Completed"}'
+
+Expected response { "error": "Course not found" } Status code: 404
+
+H. DELETE with missing id Curl curl -s -X DELETE http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{}' Expected response { "error": "Missing required field: id" } Status code: 400
+
+I. DELETE with non-existent id Payload { "id": 999999 } Curl curl -s -X DELETE http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":999999}' Expected response { "error": "Course not found" } Status code: 404
+
+Optional variations to test trailing slash and single-get endpoint
+Get all with trailing slash Curl curl -s http://127.0.0.1:5000/api/courses/ Expected: same array as /api/courses
+
+Get by id variant using query parameter (works with or without trailing slash) Curl curl -s "http://127.0.0.1:5000/api/courses?id=1" Expected: single course object if id 1 exists
+
+Notes for beginners
+
+If you don’t have jq installed, use manual copy-paste to grab IDs from responses.
+For automated extraction (optional), you can use jq to parse JSON, e.g.:
+ID=$(curl -s -X POST ... | jq '.id')
+Then use that ID in subsequent commands.
+The exact IDs and created_at timestamps will differ each run. The structure and status codes are the primary indicators of success.
+If you want, I can turn these into a small bash script that runs the test sequence end-to-end and prints pass/fail for each step.
+
+26.70 seconds
+Create a complete README.md file for the CodeCraftHub project that includes: 1. Project overview and description 2. Features list 3. Installation instructions (step-by-step) 4. How to run the application 5. API endpoints documentation with examples 6. Testing instructions 7. Troubleshooting common issues 8. Project structure explanation Write it for beginners who are learning REST APIs for the first time.
+
+
+CodeCraftHub
+A beginner-friendly Flask REST API project for tracking courses you want to learn. Data is stored in a simple JSON file (courses.json) instead of a database. No authentication is required. This project focuses on understanding CRUD operations and REST API basics.
+
+1) Project overview and description
+CodeCraftHub is a tiny learning platform where developers can keep a list of courses they want to learn. Each course tracks:
+
+id (auto-generated, starting from 1)
+name (required)
+description (required)
+target_date (required, format YYYY-MM-DD)
+status (required, one of: Not Started, In Progress, Completed)
+created_at (auto-generated timestamp)
+All data is stored in a single JSON file named
+courses.json
+. The app creates this file automatically if it doesn’t exist. The API has no authentication, making it straightforward for beginners to learn REST concepts with a real HTTP interface.
+
+2) Features
+Create, read, update, and delete courses (CRUD)
+JSON file storage (courses.json) with simple read/write operations
+Auto-generated IDs starting from 1
+Auto-generated created_at timestamp (UTC, ISO-like format)
+Validation:
+Required fields: name, description, target_date, status
+target_date must be in YYYY-MM-DD
+status must be: Not Started, In Progress, or Completed
+Endpoints under /api/courses
+Simple health check endpoint
+Automatically creates the data file if missing
+3) Installation instructions (step-by-step)
+Prerequisites:
+
+Python 3.8+ (recommended)
+PIP (comes with Python)
+Optional: Virtual environment (recommended)
+Steps:
+
+Create and activate a virtual environment (optional but recommended)
+macOS/Linux:
+python3 -m venv venv
+source venv/bin/activate
+Windows:
+python -m venv venv
+venv\Scripts\activate
+Install dependencies
+For this project, Flask is the only runtime dependency.
+pip install flask
+Create the project files
+The example uses a single file named app.py and a data directory with courses.json. You can copy the code from the repository or create your own as you learn.
+Run the application
+From the project root, start the server:
+python app.py
+By default, the API will be available at:
+http://127.0.0.1:5000/api/courses
+Notes:
+
+The app will automatically create data/courses.json if it doesn’t exist (see app code).
+If you modify ports or host, update your curl requests accordingly.
+4) How to run the application
+Start the server:
+python app.py
+Open in browser or use curl:
+http://127.0.0.1:5000/api/courses
+Optional quick start (copy-paste):
+
+Start server in one terminal:
+python app.py
+Create a course (example): see API docs below
+List courses: curl -s http://127.0.0.1:5000/api/courses
+5) API endpoints documentation with examples
+Base URL: http://127.0.0.1:5000/api/courses
+
+Note on fetching a single course:
+
+Use the id as a query parameter: /api/courses?id=<id>
+Trailing slash variants (/api/courses/ or /api/courses?id=1) are supported
+POST /api/courses
+Purpose: Add a new course
+Required fields in payload: name, description, target_date (YYYY-MM-DD), status
+Status must be one of: Not Started, In Progress, Completed
+Example payload: { "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started" }
+Curl (copy-paste): curl -s -X POST http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"name":"Python Data Classes","description":"Learn Python data classes for clean data modeling.","target_date":"2026-12-31","status":"Not Started"}'
+Successful response example (timestamps will vary): { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" }
+GET /api/courses
+Purpose: Get all courses
+Curl: curl -s http://127.0.0.1:5000/api/courses
+Successful response: an array of course objects [ { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" } ]
+GET /api/courses?id=<id>
+Purpose: Get a specific course by id
+Curl: curl -s "http://127.0.0.1:5000/api/courses?id=1"
+Successful response: single course object { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-12-31", "status": "Not Started", "created_at": "2026-04-19T12:34:56Z" }
+If not found: 404 with error message { "error": "Course not found" }
+PUT /api/courses
+Purpose: Update an existing course
+Payload: include id and any fields to update (name, description, target_date, status)
+Example payload: { "id": 1, "status": "In Progress", "target_date": "2026-11-15" }
+Curl: curl -s -X PUT http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":1,"status":"In Progress","target_date":"2026-11-15"}'
+Successful response example: { "id": 1, "name": "Python Data Classes", "description": "Learn Python data classes for clean data modeling.", "target_date": "2026-11-15", "status": "In Progress", "created_at": "2026-04-19T12:34:56Z" }
+If not found: 404 with error message
+DELETE /api/courses
+Purpose: Delete a course by id
+Payload: JSON object with id
+Example payload: { "id": 1 }
+Curl: curl -s -X DELETE http://127.0.0.1:5000/api/courses
+-H "Content-Type: application/json"
+-d '{"id":1}'
+Successful response example: { "message": "Course deleted", "id": 1 }
+If not found: 404 with error message
+Health check (optional)
+GET /health
+Curl: curl -s http://127.0.0.1:5000/health
+Response: { "status": "ok" }
+Tips:
+
+The exact ID values and created_at timestamps will vary between runs.
+Use a clean dataset at startup for predictable IDs (delete or reset courses.json if needed).
+6) Testing instructions
+Start the server:
+python app.py
+Use the curl examples above to test each endpoint.
+Suggested sequence for beginners:
+POST to create the first course
+GET to list all courses
+GET with id to fetch the created course
+PUT to update the course
+GET to confirm update
+DELETE to remove the course
+GET to confirm deletion (empty list)
+If you want, you can automate tests with a shell script by chaining these curl commands and checking for expected substrings in the responses.
+
+7) Troubleshooting common issues
+Server won’t start or port in use
+
+Ensure no other process is using port 5000.
+Try a different port by modifying the app or environment.
+File read/write errors (data/courses.json)
+
+The app will auto-create the file if missing. If you see a write/read error, check:
+The project directory permissions
+The existence of the data/ directory
+Ensure the app has permission to create and write to data/courses.json
+JSON decode errors after editing courses.json manually
+
+If you manually edit the file and corrupt JSON, the app may fail to read it. Restore from a backup or delete the file to let the app recreate an empty list.
+Invalid input errors
+
+Missing required fields: name, description, target_date, or status
+Invalid date format: target_date must be YYYY-MM-DD
+Invalid status: Allowed values are Not Started, In Progress, Completed
+Use the exact field names and correct formats in your requests
+API returns 404 for a course that exists
+
+Double-check the id you’re using matches the stored course’s id.
+Ensure you’re querying with id as a query parameter: /api/courses?id=1
+Trailing slash behavior
+
+The API accepts both /api/courses and /api/courses/ for GET operations.
+8) Project structure explanation
+CodeCraftHub is designed to be beginner-friendly and easy to understand. The simplest working version uses a single Flask app file:
+
+CodeCraftHub/
+
+app.py // The Flask app with all routes and in-file data handling
+data/
+courses.json // JSON file that stores all course objects (auto-created if missing)
+requirements.txt // optional, lists dependencies (e.g., Flask)
+Key ideas:
+
+No database: we store data in a single JSON file to keep things simple.
+Auto-generated IDs: IDs start from 1 and increment for each new course.
+Input validation: ensures required fields and correct formats before saving.
+Lightweight and educational: focused on REST API basics without authentication.
+Note: If you grow this project later, you can refactor by moving data access into separate modules (for example, a course_store.py) or adding API versioning, but the current setup is intentionally minimal for beginners.
+
+If you’d like, I can tailor the README to match any specific tweaks you’ve made to the code (different endpoint paths, additional fields, or a different directory layout).
